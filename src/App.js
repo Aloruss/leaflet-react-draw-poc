@@ -19,51 +19,83 @@ function App() {
   const [propertiesInScope, setPropertiesInScope] = useState([]);
 
   useEffect(() => {
+    console.log('polygonPoints', polygonPoints);
     if (polygonPoints.length) {
-      console.log('polygonPoints inside useEffect', polygonPoints);
       //all the coordinates of the properties
       const points = turf.points(propertiesLatLong);
-      //all the polygon (draw) coordinates
-      const searchWithin = turf.polygon([...polygonPoints]);
-      console.log('searchWithin', searchWithin);
-      //finds all the properties within the polygon
-      const pointsWithin = turf.pointsWithinPolygon(points, searchWithin);
       let properties2 = [];
-      //turf give us back an array of object, we go through it and we find amongst all the properties, the ones that have the same coordinates, and we add it to the array
-      if (pointsWithin.features.length) {
-        pointsWithin.features.forEach((feature) => {
-          let property = allProperties.find(
-            (property) => property.details.coordinates === feature.geometry.coordinates
-          );
-          if (property) {
-            properties2.push(property);
-          }
-        });
-      }
-      setPropertiesInScope(properties2);
+      polygonPoints.forEach((singlePolygonPoints) => {
+        //all the polygon (draw) coordinates
+        const searchWithin = turf.polygon([[...singlePolygonPoints.coordinates]]);
+        //finds all the properties within the polygon
+        const pointsWithin = turf.pointsWithinPolygon(points, searchWithin);
+        //turf give us back an array of object, we go through it and we find amongst all the properties, the ones that have the same coordinates, and we add it to the array
+        if (pointsWithin.features.length) {
+          pointsWithin.features.forEach((feature) => {
+            let property = allProperties.find(
+              (property) => property.details.coordinates === feature.geometry.coordinates
+            );
+            console.log('property', property);
+            if (property) {
+              properties2.push(property);
+            }
+          });
+        }
+        console.log('properties2', properties2);
+      });
+      setPropertiesInScope((properties) => {
+        const propInScope = [...properties, ...properties2];
+        return [...new Set(propInScope.flat())];
+      });
     }
+
     //don't add propertiesLatLong will cause infinite loop
   }, [polygonPoints]);
 
   const createDraw = (e) => {
+    console.log('e', e);
     const { layerType, layer } = e;
     if (layerType === 'polygon') {
       const { _leaflet_id: leafletId } = layer;
-
+      //in case of multi poligon, we want a way to know which coordinate belongs to which polygon, hence we add an id.
       setMapLayers((layers) => [...layers, { id: leafletId, latLngs: layer.getLatLngs()[0] }]);
+      //we create a polygon coordinate array as they are needed for turf to check which properties are inside or not.
       setPolygonPoints((layers) => {
-        return [...layers, layer.toGeoJSON().geometry.coordinates[0].map((latLng) => [latLng[1], latLng[0]])];
+        return [
+          ...layers,
+          {
+            id: leafletId,
+            coordinates: layer.toGeoJSON().geometry.coordinates[0].map((latLng) => [latLng[1], latLng[0]]),
+          },
+        ];
       });
     }
   };
 
   const editDraw = (e) => {
+    console.log('e', e);
     const {
       layers: { _layers },
     } = e;
     Object.values(_layers).map(({ _leaflet_id, editing }) => {
+      console.log('editing', editing);
+      //we reset the edited coordinate of the selected polygon
       setMapLayers((layers) =>
-        layers.map((l) => (l.id === _leaflet_id ? { ...l, latLngs: { ...editing.latlngs[0] } } : 1))
+        layers.map((l) => {
+          return l.id === _leaflet_id ? { ...l, latLngs: { ...editing.latlngs[0] } } : 1;
+        })
+      );
+
+      setPolygonPoints((layers) =>
+        layers.map((l) => {
+          //first and last coordinate need to be the same. toGeoJson()does that for us, but it's not available during editing
+          const coordinates = [
+            ...editing.latlngs[0][0].map((l) => [l.lat, l.lng]),
+            [editing.latlngs[0][0][0].lat, editing.latlngs[0][0][0].lng],
+          ];
+
+          return l.id === _leaflet_id ? { ...l, coordinates } : { ...l };
+        })
       );
     });
   };
@@ -73,9 +105,10 @@ function App() {
       layers: { _layers },
     } = e;
     Object.values(_layers).map(({ _leaflet_id }) => {
+      //remove the selected polygon through his id
       setMapLayers((layers) => layers.filter((l) => l.id !== _leaflet_id));
-      setPropertiesInScope([]);
-      setPolygonPoints([]);
+      setPropertiesInScope((layers) => layers.filter((l) => l.id !== _leaflet_id));
+      setPolygonPoints((layers) => layers.filter((l) => l.id !== _leaflet_id));
     });
   };
 
@@ -102,6 +135,8 @@ function App() {
         />
         {propertiesInScope.length &&
           propertiesInScope.map(({ id, details }) => {
+            console.log('propertiesInScope', propertiesInScope);
+
             return (
               <Marker key={id} position={details.coordinates} icon={icon}>
                 <Popup>
