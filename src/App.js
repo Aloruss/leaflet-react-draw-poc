@@ -19,7 +19,6 @@ function App() {
   const [propertiesInScope, setPropertiesInScope] = useState([]);
 
   useEffect(() => {
-    console.log('polygonPoints', polygonPoints);
     if (polygonPoints.length) {
       //all the coordinates of the properties
       const points = turf.points(propertiesLatLong);
@@ -35,13 +34,11 @@ function App() {
             let property = allProperties.find(
               (property) => property.details.coordinates === feature.geometry.coordinates
             );
-            console.log('property', property);
             if (property) {
-              properties2.push(property);
+              properties2.push({ ...property, leafletId: singlePolygonPoints.id });
             }
           });
         }
-        console.log('properties2', properties2);
       });
       setPropertiesInScope((properties) => {
         const propInScope = [...properties, ...properties2];
@@ -53,12 +50,13 @@ function App() {
   }, [polygonPoints]);
 
   const createDraw = (e) => {
-    console.log('e', e);
+    setPropertiesInScope([]);
     const { layerType, layer } = e;
     if (layerType === 'polygon') {
       const { _leaflet_id: leafletId } = layer;
       //in case of multi poligon, we want a way to know which coordinate belongs to which polygon, hence we add an id.
       setMapLayers((layers) => [...layers, { id: leafletId, latLngs: layer.getLatLngs()[0] }]);
+
       //we create a polygon coordinate array as they are needed for turf to check which properties are inside or not.
       setPolygonPoints((layers) => {
         return [
@@ -73,12 +71,11 @@ function App() {
   };
 
   const editDraw = (e) => {
-    console.log('e', e);
     const {
       layers: { _layers },
     } = e;
+    setPropertiesInScope([]);
     Object.values(_layers).map(({ _leaflet_id, editing }) => {
-      console.log('editing', editing);
       //we reset the edited coordinate of the selected polygon
       setMapLayers((layers) =>
         layers.map((l) => {
@@ -107,7 +104,7 @@ function App() {
     Object.values(_layers).map(({ _leaflet_id }) => {
       //remove the selected polygon through his id
       setMapLayers((layers) => layers.filter((l) => l.id !== _leaflet_id));
-      setPropertiesInScope((layers) => layers.filter((l) => l.id !== _leaflet_id));
+      setPropertiesInScope((properties) => properties.filter((property) => property.leafletId !== _leaflet_id));
       setPolygonPoints((layers) => layers.filter((l) => l.id !== _leaflet_id));
     });
   };
@@ -135,8 +132,6 @@ function App() {
         />
         {propertiesInScope.length &&
           propertiesInScope.map(({ id, details }) => {
-            console.log('propertiesInScope', propertiesInScope);
-
             return (
               <Marker key={id} position={details.coordinates} icon={icon}>
                 <Popup>
